@@ -942,13 +942,13 @@ func configureBackends(rawBackends []*ingress.Backend) error {
 
 		// if there are no any active endpoints in local cluster then find cluster-mesh endpoints here
 		if len(endpoints) == 0 && os.Getenv("CILIUM_MODE") == "true" && c_cli != nil {
-			CiliumGlobalServices, err := c_cli.GetServices()
+			ciliumGlobalServices, err := c_cli.GetServices()
 			if err != nil {
 				klog.Warningf("[Sintral9127491] Error list cilium service: %v", err)
 			} else {
 				// TODO better way to filter via cluster IP
 				// currenrtly O(n) search, due to the sdk doesn't support get via clusterIP
-				for _, ciliumService := range CiliumGlobalServices {
+				for _, ciliumService := range ciliumGlobalServices {
 					if ciliumService.Status.Realized.FrontendAddress.IP == service.Spec.ClusterIP {
 						for _, ciliumEndpoint := range ciliumService.Status.Realized.BackendAddresses {
 							endpoints = append(endpoints, ingress.Endpoint{

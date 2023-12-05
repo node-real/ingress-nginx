@@ -63,6 +63,7 @@ import (
 	"k8s.io/ingress-nginx/pkg/util/file"
 	utilingress "k8s.io/ingress-nginx/pkg/util/ingress"
 
+	cilium_cli "github.com/cilium/cilium/pkg/client"
 	klog "k8s.io/klog/v2"
 )
 
@@ -70,6 +71,21 @@ const (
 	tempNginxPattern = "nginx-cfg"
 	emptyUID         = "-1"
 )
+
+var c_cli *cilium_cli.Client
+
+func init() {
+	// just for cilium cluster mesh failover a singleton cilium client is created here
+	if os.Getenv("CILIUM_MODE") == "true" {
+		// setting a cilium api client
+		// need use unix domain socket to communicate with cilium-agent
+		var err error
+		c_cli, err = cilium_cli.NewDefaultClient()
+		if err != nil {
+			klog.Warningf("[Sintral9127491] Error setting up cilium cli: %v", err)
+		}
+	}
+}
 
 // NewNGINXController creates a new NGINX Ingress controller.
 func NewNGINXController(config *Configuration, mc metric.Collector) *NGINXController {
@@ -922,6 +938,30 @@ func configureBackends(rawBackends []*ingress.Backend) error {
 				Address: endpoint.Address,
 				Port:    endpoint.Port,
 			})
+		}
+
+		// if there are no any active endpoints in local cluster then find cluster-mesh endpoints here
+		if len(endpoints) == 0 && os.Getenv("CILIUM_MODE") == "true" && c_cli != nil {
+			CiliumGlobalServices, err := c_cli.GetServices()
+			if err != nil {
+				klog.Warningf("[Sintral9127491] Error list cilium service: %v", err)
+			} else {
+				// TODO better way to filter via cluster IP
+				// currenrtly O(n) search, due to the sdk doesn't support get via clusterIP
+				for _, ciliumService := range CiliumGlobalServices {
+					if ciliumService.Status.Realized.FrontendAddress.IP == service.Spec.ClusterIP {
+						for _, ciliumEndpoint := range ciliumService.Status.Realized.BackendAddresses {
+							endpoints = append(endpoints, ingress.Endpoint{
+								Address: *ciliumEndpoint.IP,
+								// tricky part here, cilium sdk doesn't return service target port
+								Port: backend.Port.String(),
+							})
+						}
+						break
+					}
+				}
+				klog.Infof("[Sintral9127491] clustermesh failover endpoints: %v", endpoints)
+			}
 		}
 
 		luaBackend.Endpoints = endpoints

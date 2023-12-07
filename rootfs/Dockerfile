@@ -77,6 +77,9 @@ RUN apk add --no-cache libcap \
   && apk del libcap \
   && ln -sf /usr/local/nginx/sbin/nginx /usr/bin/nginx
 
+
+# ADD user to root group to allow access to part of socket file
+RUN addgroup www-data root
 USER www-data
 
 # Create symlinks to redirect nginx logs to stdout and stderr docker log collector

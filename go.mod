@@ -4,6 +4,7 @@ go 1.21.3
 
 require (
 	dario.cat/mergo v1.0.0
+	github.com/3th1nk/cidr v0.2.0
 	github.com/armon/go-proxyproto v0.1.0
 	github.com/cilium/cilium v1.14.4
 	github.com/eapache/channels v1.1.0

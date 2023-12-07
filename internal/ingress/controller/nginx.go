@@ -63,6 +63,7 @@ import (
 	"k8s.io/ingress-nginx/pkg/util/file"
 	utilingress "k8s.io/ingress-nginx/pkg/util/ingress"
 
+	"github.com/3th1nk/cidr"
 	cilium_cli "github.com/cilium/cilium/pkg/client"
 	klog "k8s.io/klog/v2"
 )
@@ -73,6 +74,7 @@ const (
 )
 
 var c_cli *cilium_cli.Client
+var pod_cidr *cidr.CIDR
 
 func init() {
 	// just for cilium cluster mesh failover a singleton cilium client is created here
@@ -83,6 +85,13 @@ func init() {
 		c_cli, err = cilium_cli.NewDefaultClient()
 		if err != nil {
 			klog.Warningf("[Sintral9127491] Error setting up cilium cli: %v", err)
+		}
+	}
+	if os.Getenv("POD_CIDR") != "" {
+		var err error
+		pod_cidr, err = cidr.Parse(os.Getenv("POD_CIDR"))
+		if err != nil {
+			klog.Warningf("[Sintral9127491] Error parsing pod cidr: %v", err)
 		}
 	}
 }
@@ -951,11 +960,14 @@ func configureBackends(rawBackends []*ingress.Backend) error {
 				for _, ciliumService := range ciliumGlobalServices {
 					if ciliumService.Status.Realized.FrontendAddress.IP == service.Spec.ClusterIP {
 						for _, ciliumEndpoint := range ciliumService.Status.Realized.BackendAddresses {
-							endpoints = append(endpoints, ingress.Endpoint{
-								Address: *ciliumEndpoint.IP,
-								// tricky part here, cilium sdk doesn't return service target port
-								Port: backend.Port.String(),
-							})
+							// ciliumGlobalServices not sync instantly, so filter out local cluster endpoints
+							if pod_cidr != nil && !pod_cidr.Contains(*ciliumEndpoint.IP) {
+								endpoints = append(endpoints, ingress.Endpoint{
+									Address: *ciliumEndpoint.IP,
+									// tricky part here, cilium sdk doesn't return service target port
+									Port: backend.Port.String(),
+								})
+							}
 						}
 						break
 					}
